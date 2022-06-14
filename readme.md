@@ -53,3 +53,6 @@ md.start(); //Start the detection from the webcam
 ```JS
 md.stop(); //Stop the detection from the webcam
 ```
+
+### Bot response example
+<img src="images/response.PNG" style="width:15vw;">
