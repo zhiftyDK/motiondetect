@@ -13,9 +13,11 @@ First of all you need to install the telegram app
 
 Then in the app search for `@TheMotionDetectorBot`
 <br>
+<br>
 <img src="images/search.JPG" style="width:15vw;">
 
 Now open the bot and click start
+<br>
 <br>
 <img src="images/start.PNG" style="width:15vw;">
 
