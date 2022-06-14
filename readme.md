@@ -7,8 +7,7 @@ Include the library in your `.html` file
 
 ### Start the bot
 First of all you need to install the telegram app
-[![alt text](images/Telegram_logo.svg.webp)](https://telegram.org/)
-
+<a href="https://telegram.org/"><img src="images/telegram.webp" style="width:200px;"></a>
 
 ### Initialize motion detector
 Example: Full setup with all possible varaibles
