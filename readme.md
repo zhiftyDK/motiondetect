@@ -5,6 +5,11 @@ Include the library in your `.html` file
 <script src="//zhiftydk.github.io/motiondetect/motiondetect.js"></script>
 ```
 
+### Start the bot
+First of all you need to install the telegram app
+[![alt text](images/Telegram_logo.svg.webp)](https://telegram.org/)
+
+
 ### Initialize motion detector
 Example: Full setup with all possible varaibles
 ```JS
