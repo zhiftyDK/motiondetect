@@ -290,7 +290,7 @@ function dataURItoBlob(dataURI) {
 let chatId;
 let displayVideo = "none"
 let botId = "5338504929:AAHZulboa7YpUPDjU3QgqPI9JUARlHuj5YI";
-let detectThreshold = 100;
+let detectThreshold = 50;
 let message = "Motion is detected!";
 class motionDetect {
     constructor(config) {
@@ -385,7 +385,7 @@ class motionDetect {
 
                 setTimeout(() => {
                     canrun = true;
-		    console.log("ready");
+		            console.log("ready");
                 }, 20 * 1000);
             }
         }

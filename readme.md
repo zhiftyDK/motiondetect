@@ -29,7 +29,7 @@ const config = {
     chatId: "5598851680", //REQUIRED How to get telegram chatId https://www.alphr.com/find-chat-id-telegram/
     message: "Motion is detected!", //OPTIONAL Default message is "Motion is detected!"
     displayVideo: false, //OPTIONAL Boolean.. Default is false
-    detectThreshold: 100, //OPTIONAL integer.. Default detectThreshold is 100
+    detectThreshold: 50, //OPTIONAL integer.. Default detectThreshold is 50
     botId: "5338504929:AAHZulboa7YpUPDjU3QgqPI9JUARlHuj5YI", //OPTIONAL This is the defualt telgram botId for TheMotionDetector bot
 }
 const md = new motionDetect(config); //Create new detection instance with the config
