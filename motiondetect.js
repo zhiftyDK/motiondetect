@@ -1,0 +1,411 @@
+var DiffCamEngine = (function() {
+	var stream;					// stream obtained from webcam
+	var video;					// shows stream
+	var captureCanvas;			// internal canvas for capturing full images from video
+	var captureContext;			// context for capture canvas
+	var diffCanvas;				// internal canvas for diffing downscaled captures
+	var diffContext;			// context for diff canvas
+	var motionCanvas;			// receives processed diff images
+	var motionContext;			// context for motion canvas
+
+	var initSuccessCallback;	// called when init succeeds
+	var initErrorCallback;		// called when init fails
+	var startCompleteCallback;	// called when start is complete
+	var captureCallback;		// called when an image has been captured and diffed
+
+	var captureInterval;		// interval for continuous captures
+	var captureIntervalTime;	// time between captures, in ms
+	var captureWidth;			// full captured image width
+	var captureHeight;			// full captured image height
+	var diffWidth;				// downscaled width for diff/motion
+	var diffHeight;				// downscaled height for diff/motion
+	var isReadyToDiff;			// has a previous capture been made to diff against?
+	var pixelDiffThreshold;		// min for a pixel to be considered significant
+	var scoreThreshold;			// min for an image to be considered significant
+	var includeMotionBox;		// flag to calculate and draw motion bounding box
+	var includeMotionPixels;	// flag to create object denoting pixels with motion
+
+	function init(options) {
+		// sanity check
+		if (!options) {
+			throw 'No options object provided';
+		}
+
+		// incoming options with defaults
+		video = options.video || document.createElement('video');
+		motionCanvas = options.motionCanvas || document.createElement('canvas');
+		captureIntervalTime = options.captureIntervalTime || 100;
+		captureWidth = options.captureWidth || 640;
+		captureHeight = options.captureHeight || 480;
+		diffWidth = options.diffWidth || 64;
+		diffHeight = options.diffHeight || 48;
+		pixelDiffThreshold = options.pixelDiffThreshold || 32;
+		scoreThreshold = options.scoreThreshold || 16;
+		includeMotionBox = options.includeMotionBox || false;
+		includeMotionPixels = options.includeMotionPixels || false;
+
+		// callbacks
+		initSuccessCallback = options.initSuccessCallback || function() {};
+		initErrorCallback = options.initErrorCallback || function() {};
+		startCompleteCallback = options.startCompleteCallback || function() {};
+		captureCallback = options.captureCallback || function() {};
+
+		// non-configurable
+		captureCanvas = document.createElement('canvas');
+		diffCanvas = document.createElement('canvas');
+		isReadyToDiff = false;
+
+		// prep video
+		video.autoplay = true;
+
+		// prep capture canvas
+		captureCanvas.width = captureWidth;
+		captureCanvas.height = captureHeight;
+		captureContext = captureCanvas.getContext('2d');
+
+		// prep diff canvas
+		diffCanvas.width = diffWidth;
+		diffCanvas.height = diffHeight;
+		diffContext = diffCanvas.getContext('2d');
+
+		// prep motion canvas
+		motionCanvas.width = diffWidth;
+		motionCanvas.height = diffHeight;
+		motionContext = motionCanvas.getContext('2d');
+
+		requestWebcam();
+	}
+
+	function requestWebcam() {
+		var constraints = {
+			audio: false,
+			video: { width: captureWidth, height: captureHeight }
+		};
+
+		navigator.mediaDevices.getUserMedia(constraints)
+			.then(initSuccess)
+			.catch(initError);
+	}
+
+	function initSuccess(requestedStream) {
+		stream = requestedStream;
+		initSuccessCallback();
+	}
+
+	function initError(error) {
+		console.log(error);
+		initErrorCallback();
+	}
+
+	function start() {
+		if (!stream) {
+			throw 'Cannot start after init fail';
+		}
+
+		// streaming takes a moment to start
+		video.addEventListener('canplay', startComplete);
+		video.srcObject = stream;
+	}
+
+	function startComplete() {
+		video.removeEventListener('canplay', startComplete);
+		captureInterval = setInterval(capture, captureIntervalTime);
+		startCompleteCallback();
+	}
+
+	function stop() {
+		clearInterval(captureInterval);
+		video.src = '';
+		motionContext.clearRect(0, 0, diffWidth, diffHeight);
+		isReadyToDiff = false;
+	}
+
+	function capture() {
+		// save a full-sized copy of capture
+		captureContext.drawImage(video, 0, 0, captureWidth, captureHeight);
+		var captureImageData = captureContext.getImageData(0, 0, captureWidth, captureHeight);
+
+		// diff current capture over previous capture, leftover from last time
+		diffContext.globalCompositeOperation = 'difference';
+		diffContext.drawImage(video, 0, 0, diffWidth, diffHeight);
+		var diffImageData = diffContext.getImageData(0, 0, diffWidth, diffHeight);
+
+		if (isReadyToDiff) {
+			var diff = processDiff(diffImageData);
+
+			motionContext.putImageData(diffImageData, 0, 0);
+			if (diff.motionBox) {
+				motionContext.strokeStyle = '#0f0';
+				motionContext.strokeRect(
+					diff.motionBox.x.min + 0.5,
+					diff.motionBox.y.min + 0.5,
+					diff.motionBox.x.max - diff.motionBox.x.min,
+					diff.motionBox.y.max - diff.motionBox.y.min
+				);
+			}
+			captureCallback({
+				imageData: captureImageData,
+				score: diff.score,
+				hasMotion: diff.score >= scoreThreshold,
+				motionBox: diff.motionBox,
+				motionPixels: diff.motionPixels,
+				getURL: getCaptureUrl(captureImageData),
+				checkMotionPixel: function(x, y) {
+					return checkMotionPixel(diff.motionPixels, x, y)
+				}
+			});
+		}
+
+		// draw current capture normally over diff, ready for next time
+		diffContext.globalCompositeOperation = 'source-over';
+		diffContext.drawImage(video, 0, 0, diffWidth, diffHeight);
+		isReadyToDiff = true;
+	}
+
+	function processDiff(diffImageData) {
+		var rgba = diffImageData.data;
+
+		// pixel adjustments are done by reference directly on diffImageData
+		var score = 0;
+		var motionPixels = includeMotionPixels ? [] : undefined;
+		var motionBox = undefined;
+		for (var i = 0; i < rgba.length; i += 4) {
+			var pixelDiff = rgba[i] * 0.3 + rgba[i + 1] * 0.9 + rgba[i + 2] * 0.1;
+			var normalized = Math.min(255, pixelDiff * (255 / pixelDiffThreshold));
+			rgba[i] = 0;
+			rgba[i + 1] = normalized;
+			rgba[i + 2] = 0;
+
+			if (pixelDiff >= pixelDiffThreshold) {
+				score++;
+				coords = calculateCoordinates(i / 4);
+
+				if (includeMotionBox) {
+					motionBox = calculateMotionBox(motionBox, coords.x, coords.y);
+				}
+
+				if (includeMotionPixels) {
+					motionPixels = calculateMotionPixels(motionPixels, coords.x, coords.y, pixelDiff);
+				}
+
+			}
+		}
+
+		return {
+			score: score,
+			motionBox: score > scoreThreshold ? motionBox : undefined,
+			motionPixels: motionPixels
+		};
+	}
+
+	function calculateCoordinates(pixelIndex) {
+		return {
+			x: pixelIndex % diffWidth,
+			y: Math.floor(pixelIndex / diffWidth)
+		};
+	}
+
+	function calculateMotionBox(currentMotionBox, x, y) {
+		// init motion box on demand
+		var motionBox = currentMotionBox || {
+			x: { min: coords.x, max: x },
+			y: { min: coords.y, max: y }
+		};
+
+		motionBox.x.min = Math.min(motionBox.x.min, x);
+		motionBox.x.max = Math.max(motionBox.x.max, x);
+		motionBox.y.min = Math.min(motionBox.y.min, y);
+		motionBox.y.max = Math.max(motionBox.y.max, y);
+
+		return motionBox;
+	}
+
+	function calculateMotionPixels(motionPixels, x, y, pixelDiff) {
+		motionPixels[x] = motionPixels[x] || [];
+		motionPixels[x][y] = true;
+
+		return motionPixels;
+	}
+
+	function getCaptureUrl(captureImageData) {
+		// may as well borrow captureCanvas
+		captureContext.putImageData(captureImageData, 0, 0);
+		return captureCanvas.toDataURL();
+	}
+
+	function checkMotionPixel(motionPixels, x, y) {
+		return motionPixels && motionPixels[x] && motionPixels[x][y];
+	}
+
+	function getPixelDiffThreshold() {
+		return pixelDiffThreshold;
+	}
+
+	function setPixelDiffThreshold(val) {
+		pixelDiffThreshold = val;
+	}
+
+	function getScoreThreshold() {
+		return scoreThreshold;
+	}
+
+	function setScoreThreshold(val) {
+		scoreThreshold = val;
+	}
+
+	return {
+		// public getters/setters
+		getPixelDiffThreshold: getPixelDiffThreshold,
+		setPixelDiffThreshold: setPixelDiffThreshold,
+		getScoreThreshold: getScoreThreshold,
+		setScoreThreshold: setScoreThreshold,
+
+		// public functions
+		init: init,
+		start: start,
+		stop: stop
+	};
+})();
+
+function dataURItoBlob(dataURI) {
+    // convert base64/URLEncoded data component to raw binary data held in a string
+    var byteString;
+    if (dataURI.split(',')[0].indexOf('base64') >= 0)
+        byteString = atob(dataURI.split(',')[1]);
+    else
+        byteString = unescape(dataURI.split(',')[1]);
+
+    // separate out the mime component
+    var mimeString = dataURI.split(',')[0].split(':')[1].split(';')[0];
+
+    // write the bytes of the string to a typed array
+    var ia = new Uint8Array(byteString.length);
+    for (var i = 0; i < byteString.length; i++) {
+        ia[i] = byteString.charCodeAt(i);
+    }
+
+    return new Blob([ia], {type:mimeString});
+}
+
+let chatId;
+let displayVideo = "none"
+let botId = "5338504929:AAHZulboa7YpUPDjU3QgqPI9JUARlHuj5YI";
+let detectThreshold = 100;
+let message = "Motion is detected!";
+class motionDetect {
+    constructor(config) {
+        chatId = config.chatId;
+        if(config.botId){
+            botId = config.botId;
+        }
+        if(config.detectThreshold){
+            detectThreshold = config.detectThreshold;
+        }
+        if(config.message){
+            message = config.message;
+        }
+        if(config.displayVideo == true){
+            displayVideo = "block";
+        }
+    }
+
+    start(){
+        console.log("Motion detection has started!");
+        console.log("chatId:", chatId);
+        console.log("botId:", botId);
+        console.log("displayVideo:", displayVideo);
+        console.log("detectThreshold:", detectThreshold);
+        console.log("message:", message);
+
+        const videoTag = document.createElement("video");
+        videoTag.style.display = displayVideo;
+        videoTag.id = "video";
+        document.body.appendChild(videoTag);
+
+        var video = document.getElementById('video');
+        var canvas = document.getElementById('motion');
+        var score = document.getElementById('score');
+
+        function initSuccess() {
+            DiffCamEngine.start();
+            DiffCamEngine.setScoreThreshold(detectThreshold);
+        }
+
+        function initError() {
+            alert('Something went wrong.');
+        }
+
+        function capture(payload) {
+            if(payload.hasMotion) {
+                sendMotion();
+            }
+        }
+
+        let canrun = true
+        function sendMotion(){
+            if(canrun == true){
+                canrun = false;
+                console.log("start")
+
+                fetch(`https://api.telegram.org/bot${botId}/sendMessage?text=${message}&chat_id=${chatId}`)
+                .then(response => response.json())
+                .then(data => {
+                    console.log(data)
+                });
+
+                setTimeout(() => {
+                    console.log("sending image")
+                    if(document.getElementById("canvas")){
+                        document.getElementById("canvas").remove();
+                    }
+                    const can = document.createElement("canvas");
+                    can.height = 480;
+                    can.width = 640
+                    can.id = "canvas";
+                    can.getContext('2d').drawImage(video, 0, 0, can.width, can.height);
+                    const blob = dataURItoBlob(can.toDataURL('image/jpeg'));
+                    const formData = new FormData
+                    formData.append("photo", blob);
+                    fetch(`https://api.telegram.org/bot${botId}/sendPhoto?parse_mode=html&chat_id=${chatId}`, {
+                        method: "POST",
+                        body: formData
+                    })
+                }, 2000);
+
+                // fetch(`https://api.telegram.org/bot5557844551:AAE9I8wGBxuRRYhQuyG8gBnbgTDHr_VdUqk/sendPhoto?parse_mode=html&chat_id=5598851680`, {
+                //     method: "POST",
+                //     body: photoFormData
+                // })
+
+                // fetch(`https://api.telegram.org/bot5557844551:AAE9I8wGBxuRRYhQuyG8gBnbgTDHr_VdUqk/sendMessage?text=${message}&chat_id=5598851680`)
+                // .then(response => response.json())
+                // .then(data => {
+                //     console.log(data)
+                // });
+
+                setTimeout(() => {
+                    canrun = true;
+                }, 20 * 1000);
+            }
+        }
+
+        DiffCamEngine.init({
+            video: video,
+            motionCanvas: canvas,
+            initSuccessCallback: initSuccess,
+            initErrorCallback: initError,
+            captureCallback: capture
+        });    
+    }
+
+    stop(){
+        setTimeout(() => {
+            console.log("Motion detection has stopped!");
+            DiffCamEngine.stop();
+            document.getElementById("video").srcObject.getTracks().forEach(track => {
+                track.stop();
+            });
+            document.getElementById("video").remove();
+        }, 1000);
+    }
+}
