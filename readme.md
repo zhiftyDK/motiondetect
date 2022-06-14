@@ -19,7 +19,7 @@ Then in the app search for `@TheMotionDetectorBot`
 Now open the bot and click start
 <br>
 <br>
-<img src="images/search.JPG" style="width:20vw;">
+<img src="images/start.PNG" style="width:20vw;">
 
 ### Initialize motion detector
 Example: Full setup with all possible varaibles
