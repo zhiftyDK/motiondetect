@@ -385,6 +385,7 @@ class motionDetect {
 
                 setTimeout(() => {
                     canrun = true;
+		    console.log("ready");
                 }, 20 * 1000);
             }
         }
