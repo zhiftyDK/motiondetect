@@ -287,6 +287,7 @@ function dataURItoBlob(dataURI) {
     return new Blob([ia], {type:mimeString});
 }
 
+let token;
 let chatId;
 let displayVideo = "none"
 let botId = "5338504929:AAHZulboa7YpUPDjU3QgqPI9JUARlHuj5YI";
@@ -294,6 +295,7 @@ let detectThreshold = 50;
 let message = "Motion is detected!";
 class motionDetect {
     constructor(config) {
+        token = config.token;
         chatId = config.chatId;
         if(config.botId){
             botId = config.botId;
@@ -310,6 +312,7 @@ class motionDetect {
     }
 
     start(){
+        if(token != "beta") return;
         console.log("Motion detection has started!");
         console.log("chatId:", chatId);
         console.log("botId:", botId);
@@ -372,17 +375,6 @@ class motionDetect {
                     })
                 }, 2000);
 
-                // fetch(`https://api.telegram.org/bot5557844551:AAE9I8wGBxuRRYhQuyG8gBnbgTDHr_VdUqk/sendPhoto?parse_mode=html&chat_id=5598851680`, {
-                //     method: "POST",
-                //     body: photoFormData
-                // })
-
-                // fetch(`https://api.telegram.org/bot5557844551:AAE9I8wGBxuRRYhQuyG8gBnbgTDHr_VdUqk/sendMessage?text=${message}&chat_id=5598851680`)
-                // .then(response => response.json())
-                // .then(data => {
-                //     console.log(data)
-                // });
-
                 setTimeout(() => {
                     canrun = true;
 		            console.log("ready");
@@ -400,6 +392,7 @@ class motionDetect {
     }
 
     stop(){
+        if(token != "beta") return;
         setTimeout(() => {
             console.log("Motion detection has stopped!");
             DiffCamEngine.stop();

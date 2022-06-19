@@ -26,6 +26,7 @@ Example: Full setup with all possible varaibles
 ```JS
 //The motion detector is using telegram to send messages!
 const config = {
+    token: "beta", //REQUIRED Right now the token is just "beta"
     chatId: "1234567890", //REQUIRED How to get telegram chatId https://www.alphr.com/find-chat-id-telegram/
     message: "Motion is detected!", //OPTIONAL Default message is "Motion is detected!"
     displayVideo: false, //OPTIONAL Boolean.. Default is false
